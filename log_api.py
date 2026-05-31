@@ -2,7 +2,7 @@
 """
 Log API — runs on WAF VM
 Exposes recent ModSecurity audit log lines over HTTP.
-Endpoint: GET /logs?lines=100
+Endpoint: GET /logs?lines=150
 Auth: X-API-Key header
 """
 
@@ -13,8 +13,8 @@ app = Flask(__name__)
 
 # --- Config ---
 LOG_FILE = "/var/log/modsec_audit.log"
-API_KEY = "vborisov123"
-DEFAULT_LINES = 100
+API_KEY = "" #PLACE YOUR AUTH KEY STRING
+DEFAULT_LINES = 150
 MAX_LINES = 500
 
 # --- Auth check ---
