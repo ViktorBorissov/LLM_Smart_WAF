@@ -1,78 +1,76 @@
 #!/usr/bin/env python3
 """
 Log API — runs on WAF VM
-Exposes recent ModSecurity audit log lines over HTTP.
-Endpoint: GET /logs?lines=150
-Auth: X-API-Key header
+Serves last N lines of ModSecurity log, stripped of noisy content.
 """
 
 from flask import Flask, request, jsonify
 import os
+import re
 
 app = Flask(__name__)
 
-# --- Config ---
 LOG_FILE = "/var/log/modsec_audit.log"
-API_KEY = "" #PLACE YOUR AUTH KEY STRING
-DEFAULT_LINES = 150
-MAX_LINES = 500
+API_KEY = "vborisov123"
+DEFAULT_LINES = 30
 
-# --- Auth check ---
 def is_authorized():
     return request.headers.get("X-API-Key") == API_KEY
 
-# --- Read last N lines from log file efficiently ---
-def tail(filepath, n):
+def get_clean_lines(filepath, n):
     if not os.path.exists(filepath):
         return []
+
+    # Read last N lines efficiently
     with open(filepath, "rb") as f:
-        # Seek from end to avoid reading entire file into memory
         f.seek(0, 2)
-        file_size = f.tell()
-        block_size = 4096
-        data = b""
-        position = file_size
-        lines_found = 0
+        block, data = 4096, b""
+        pos = f.tell()
+        while pos > 0 and data.count(b"\n") < n + 1:
+            read = min(block, pos)
+            pos -= read
+            f.seek(pos)
+            data = f.read(read) + data
+        lines = data.decode("utf-8", errors="replace").splitlines()[-n:]
 
-        while position > 0 and lines_found < n + 1:
-            read_size = min(block_size, position)
-            position -= read_size
-            f.seek(position)
-            chunk = f.read(read_size)
-            data = chunk + data
-            lines_found = data.count(b"\n")
+    clean = []
+    for line in lines:
+        # Skip lines that are just noise
+        if any(skip in line for skip in [
+            "Cookie:", "User-Agent:", "Accept:", "Authorization:",
+            "token=", "ETag:", "If-None-Match", "---", "Connection:",
+            "Upgrade-Insecure", "Accept-Encoding", "Accept-Language",
+            "Feature-Policy", "X-Frame", "X-Content", "X-Recruiting"
+        ]):
+            continue
 
-        lines = data.decode("utf-8", errors="replace").splitlines()
-        return lines[-n:] if len(lines) >= n else lines
+        # Shorten URL-encoded URIs
+        line = re.sub(r'%[0-9A-Fa-f]{2}', '', line)
 
-# --- Routes ---
+        # Truncate very long lines
+        if len(line) > 200:
+            line = line[:200] + "..."
+
+        line = line.strip()
+        if line:
+            clean.append(line)
+
+    return clean
+
 @app.route("/logs", methods=["GET"])
 def get_logs():
     if not is_authorized():
         return jsonify({"error": "Unauthorized"}), 401
 
-    try:
-        n = int(request.args.get("lines", DEFAULT_LINES))
-        n = min(n, MAX_LINES)  # Cap at MAX_LINES
-    except ValueError:
-        return jsonify({"error": "Invalid 'lines' parameter"}), 400
-
-    lines = tail(LOG_FILE, n)
-
+    lines = get_clean_lines(LOG_FILE, DEFAULT_LINES)
     return jsonify({
-        "log_file": LOG_FILE,
         "lines_returned": len(lines),
-        "logs": lines
+        "logs": "\n".join(lines)
     })
 
 @app.route("/health", methods=["GET"])
 def health():
-    exists = os.path.exists(LOG_FILE)
-    return jsonify({
-        "status": "ok",
-        "log_file_accessible": exists
-    })
+    return jsonify({"status": "ok", "log_file_accessible": os.path.exists(LOG_FILE)})
 
 if __name__ == "__main__":
-    # Bind only to the private network interface, not 0.0.0.0
-    app.run(host="192.168.32.15", port=5001)  # <-- Replace WAF_IP with actual IP
+    app.run(host="192.168.32.WAF_IP", port=5001)  # <-- Replace WAF_IP
