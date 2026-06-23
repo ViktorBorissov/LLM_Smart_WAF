@@ -3,7 +3,7 @@
 Log API — runs on WAF VM
 Serves last N lines of ModSecurity log, stripped of noisy content.
 """
-
+from urllib.parse import unquote
 from flask import Flask, request, jsonify
 import os
 import re
@@ -45,7 +45,7 @@ def get_clean_lines(filepath, n):
             continue
 
         # Shorten URL-encoded URIs
-        line = re.sub(r'%[0-9A-Fa-f]{2}', '', line)
+        line = unquote(line)
 
         # Truncate very long lines
         if len(line) > 1000:
