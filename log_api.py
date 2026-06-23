@@ -48,8 +48,8 @@ def get_clean_lines(filepath, n):
         line = re.sub(r'%[0-9A-Fa-f]{2}', '', line)
 
         # Truncate very long lines
-        if len(line) > 200:
-            line = line[:200] + "..."
+        if len(line) > 1000:
+            line = line[:1000] + "..."
 
         line = line.strip()
         if line:
